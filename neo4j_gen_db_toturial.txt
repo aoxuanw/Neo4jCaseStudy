@@ -1,0 +1,130 @@
+导入csv文件后，创建4个节点：
+node 1: cve
+prime_key: 'cveMetadata cveId'
+attributes: ['dataType', 'dataVersion', 'cveMetadata cveId',
+       'cveMetadata assignerOrgId', 'cveMetadata assignerShortName',
+       'cveMetadata datePublished', 'cveMetadata state',
+       'cveMetadata dateUpdated',]
+
+node 2: Vulnerability provider
+prime_key:'cna providerMetadata shortName'
+attributes: ['cna providerMetadata orgId',
+       'cna providerMetadata shortName',
+       'cna providerMetadata providerDateUpdated', 'description',]
+
+
+node 3 Affected vendor,
+prime_key: 'affected vendor'
+attributes: [ 'affected vendor', 'affected product', 'affected version status',]
+
+
+
+node 4 ProblemType
+prime_key: 'problemTypes description cweId'
+attributes: ['problemTypes description type', 'problemTypes description cweId',
+       'problemTypes description']
+
+代码如下：
+```neo4j
+// 创建节点
+LOAD CSV WITH HEADERS FROM 'file:///cve_broad_112test.csv' AS row
+MERGE (cve:CVE {cveId: row.`cveMetadata cveId`})
+SET cve.dataType = row.dataType,
+    cve.dataVersion = row.dataVersion,
+    cve.assignerOrgId = row.`cveMetadata assignerOrgId`,
+    cve.assignerShortName = row.`cveMetadata assignerShortName`,
+    cve.datePublished = row.`cveMetadata datePublished`,
+    cve.state = row.`cveMetadata state`,
+    cve.dateUpdated = row.`cveMetadata dateUpdated`
+MERGE (vp:VulnerabilityProvider {shortName: row.`cna providerMetadata shortName`})
+SET vp.orgId = row.`cna providerMetadata orgId`,
+    vp.providerDateUpdated = row.`cna providerMetadata providerDateUpdated`,
+    vp.description = row.description
+MERGE (av:AffectedVendor {vendor: row.`affected vendor`})
+SET av.product = row.`affected product`,
+    av.versionStatus = row.`affected version status`
+MERGE (pt:ProblemType {cweId: row.`problemTypes description cweId`})
+SET pt.type = row.`problemTypes description type`,
+    pt.description = row.`problemTypes description`
+```
+
+
+查看cve节点
+```
+MATCH (n:CVE) RETURN n LIMIT 25
+```
+
+
+建立关系，i.e.,链接nodes
+```cypher
+// 建立关系
+LOAD CSV WITH HEADERS FROM 'file:///cve_broad_112test.csv' AS row
+MATCH (cve:CVE {cveId: row.`cveMetadata cveId`}),
+      (vp:VulnerabilityProvider {shortName: row.`cna providerMetadata shortName`}),
+      (av:AffectedVendor {vendor: row.`affected vendor`}),
+      (pt:ProblemType {cweId: row.`problemTypes description cweId`})
+MERGE (vp)-[:PROVIDED]->(cve)
+MERGE (cve)-[:AFFECTS]->(av)
+MERGE (cve)-[:TYPE]->(pt)
+RETURN cve, vp, av, pt  // 添加返回语句
+
+```
+
+
+根据你的图数据库和显示的节点信息（特别是CVE节点），这里有几个基本的查询示例，你可以在Neo4j中尝试以获取不同的信息：
+
+### 1. 查询所有CVE节点的基本信息
+这个查询返回所有CVE节点的关键属性。
+```cypher
+MATCH (c:CVE)
+RETURN c.cveId AS CVE_ID, c.dataType AS Type, c.datePublished AS Published_Date
+ORDER BY c.datePublished DESC
+LIMIT 10;
+```
+
+### 2. 查找特定CVE的详细信息
+替换`CVE-2022-2231`为你感兴趣的具体CVE ID。
+```cypher
+MATCH (c:CVE {cveId: "CVE-2022-2231"})
+RETURN c;
+```
+
+### 3. 查询CVE和相关的Vulnerability Providers
+这个查询展示了CVE及其关联的Vulnerability Providers。
+```cypher
+MATCH (c:CVE)-[:PROVIDED]->(vp:VulnerabilityProvider)
+RETURN c.cveId AS CVE_ID, vp.shortName AS Provider_Short_Name, vp.description AS Description;
+```
+
+### 4. 查询受影响的Vendors及其产品
+这个查询找出所有受特定CVE影响的Vendors和产品。
+```cypher
+MATCH (c:CVE {cveId: "CVE-2022-2231"})-[:AFFECTS]->(av:AffectedVendor)
+RETURN av.vendor AS Vendor, av.product AS Product, av.versionStatus AS Version_Status;
+```
+
+### 5. 探索特定问题类型的CVE
+替换`CWE-79`为你感兴趣的问题类型的ID。
+```cypher
+MATCH (pt:ProblemType {cweId: "CWE-79"})<-[:TYPE]-(c:CVE)
+RETURN c.cveId AS CVE_ID, pt.description AS Problem_Description;
+```
+
+### 6. 查找某个特定时间范围内发布的CVE
+替换日期范围为你感兴趣的时间段。
+```cypher
+MATCH (c:CVE)
+WHERE c.datePublished >= "2022-01-01T00:00:00" AND c.datePublished <= "2022-12-31T23:59:59"
+RETURN c.cveId AS CVE_ID, c.datePublished AS Published_Date
+ORDER BY c.datePublished;
+```
+
+### 7. 分析CVE的趋势
+这个查询帮助理解每个月发布的CVE数量。
+```cypher
+MATCH (c:CVE)
+RETURN substring(c.datePublished, 0, 7) AS Month, count(*) AS CVE_Count
+ORDER BY Month;
+```
+
+这些查询可以帮助你从不同角度分析和理解你的图数据库中存储的数据。你可以根据具体需求修改和扩展这些查询。
